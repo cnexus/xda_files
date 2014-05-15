@@ -1,0 +1,84 @@
+package co.cnexus.xp.force.enter;
+
+import static de.robv.android.xposed.XposedHelpers.findClass;
+import static de.robv.android.xposed.XposedHelpers.setObjectField;
+
+import java.lang.reflect.Field;
+
+import android.text.InputType;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import de.robv.android.xposed.IXposedHookLoadPackage;
+import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
+
+public class MainHook implements IXposedHookLoadPackage{
+	private static boolean DEBUG = false;
+	private static String HANGOUTS_PACKAGE = "com.google.android.talk";
+	private static String HOOKED_CLASS = "com.google.android.apps.babel.views.ComposeMessageView";
+	private static Class<?> messageViewClass;
+	private static HangoutsHook forceEnterKeyOnInit;
+
+	public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
+		if(!lpparam.packageName.equals(HANGOUTS_PACKAGE))
+			return;
+
+		// Get version code for package to determine class to hook
+		// First get context from a known object that will have it
+
+		if(forceEnterKeyOnInit == null)
+			forceEnterKeyOnInit = new HangoutsHook(lpparam.classLoader);
+
+		XposedBridge.hookAllConstructors(messageViewClass, forceEnterKeyOnInit);
+	}
+
+	private static Object findFieldByType(Class <?> clz, Class<?> type){
+		for (Field field : clz.getDeclaredFields()) {
+			if (field.getType() == type) {
+				field.setAccessible(true);
+				return field;
+			}
+		}
+
+		return null;
+	}
+
+	private static class HangoutsHook extends XC_MethodHook{
+		private HangoutsHook(ClassLoader loader){
+			if(messageViewClass == null)
+				messageViewClass = findClass(HOOKED_CLASS, loader);
+		}
+
+		protected void afterHookedMethod(final MethodHookParam param) throws Throwable {
+			Object et = findFieldByType(param.thisObject.getClass(), android.widget.EditText.class);
+			
+			EditText editText = (EditText) et;
+			
+			if(DEBUG){
+				if(editText == null){
+					XposedBridge.log("EditText field not found. Exiting");
+				}else
+					XposedBridge.log("EditText field found, name is " + ((Field) et).getName());
+			}
+			
+			if(editText == null)
+				return;
+
+
+			editText.setInputType(InputType.TYPE_CLASS_TEXT
+					| InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+					| InputType.TYPE_TEXT_FLAG_AUTO_CORRECT
+					| InputType.TYPE_TEXT_FLAG_MULTI_LINE
+					| InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE);
+
+			editText.setSingleLine(false);
+
+			editText.setImeOptions(EditorInfo.IME_ACTION_NONE);
+
+			setObjectField(param.thisObject, ((Field) et).getName(), editText);
+		}
+	};
+
+}
